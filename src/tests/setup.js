@@ -242,11 +242,12 @@ vi.mock( 'electron-plugin-prompts', () => (
 */
 
 global.fetch = vi.fn();
-global.AbortController = vi.fn( () => (
-{
-    abort: vi.fn(),
-    signal: {}
-}) );
+
+/*
+    use Node's native AbortController; fetch is fully mocked above so no real
+    requests are aborted. the native implementation provides a spec-compliant
+    signal (addEventListener, aborted, etc.) which the code under test relies on.
+*/
 
 /*
     set NODE_ENV for testing
