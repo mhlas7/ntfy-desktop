@@ -1239,6 +1239,27 @@ function ready()
     });
 
     /**
+        Event > Show / Hide
+
+        push the real window visibility to the injected renderer so the notification
+        bridge can mirror it into document.hidden / visibilityState. while the app sits
+        in the tray (hidden) the ntfy web app will emit notifications, which we forward
+        to the native notifier; when the window is shown we report visible so it behaves
+        normally.
+    */
+
+    const sendWindowVisibility = ( hidden ) =>
+    {
+        if ( guiMain && guiMain.webContents && !guiMain.webContents.isDestroyed() )
+            guiMain.webContents.send( 'fromMain', { type: 'window-visibility', hidden });
+    };
+
+    guiMain.on( 'show', () => sendWindowVisibility( false ) );
+    guiMain.on( 'hide', () => sendWindowVisibility( true ) );
+    guiMain.on( 'focus', () => sendWindowVisibility( false ) );
+    guiMain.on( 'minimize', () => sendWindowVisibility( true ) );
+
+    /**
         Event > New Window
 
         buttons leading to external websites should open in user browser
@@ -1257,6 +1278,13 @@ function ready()
 
     guiMain.webContents.on( 'did-finish-load', ( e, url ) =>
     {
+        /*
+            report the accurate initial window visibility to the notification bridge
+            once the renderer (and its 'fromMain' listener) has loaded.
+        */
+
+        sendWindowVisibility( !guiMain.isVisible() );
+
         if ( ( statusBoolError === true || statusBadURL === true ) && statusStrMsg !== '' )
         {
             guiMain.webContents
@@ -1677,6 +1705,47 @@ ipcMain.on( 'button-clicked', ( event, data ) =>
     Log.debug( `badge`, chalk.yellow( `[reset]` ), chalk.white( `:  ` ),
         chalk.greenBright( `<msg>` ), chalk.gray( `Badge count reset to 0` ),
         chalk.greenBright( `<trigger>` ), chalk.gray( `MuiButtonBase-root click detected` ) );
+});
+
+/**
+    ipc > renderer > native notification bridge
+
+    the injected renderer intercepts the ntfy web app's own Web Notifications and
+    forwards them here so we can display them through the native notifier
+    (toasted-notifier / notify-send), which integrates with the desktop notification
+    server. because this rides on the web app's live subscriptions, it delivers a
+    desktop popup for every topic the user is subscribed to — including topics added
+    later — without maintaining a separate poll-topics list.
+*/
+
+ipcMain.on( 'web-notification', ( event, data ) =>
+{
+    const title = ( data && data.title ) ? String( data.title ) : appTitle;
+    const message = ( data && data.body ) ? String( data.body ) : '';
+
+    /*
+        ignore empty notifications
+    */
+
+    if ( ( !data || !data.title ) && message === '' )
+        return;
+
+    const cfgPersistent = store.getInt( 'bPersistentNoti' ) !== 0;
+
+    toasted.notify({
+        title,
+        message,
+        sound: 'Pop',
+        open: store.get( 'instanceURL' ),
+        persistent: cfgPersistent,
+        sticky: cfgPersistent
+    });
+
+    UpdateBadge();
+
+    Log.debug( `ipc`, chalk.yellow( `[web-notification]` ), chalk.white( `:  ` ),
+        chalk.blueBright( `<msg>` ), chalk.gray( `Forwarded web app notification to native notifier` ),
+        chalk.blueBright( `<title>` ), chalk.gray( `${ title }` ) );
 });
 
 /**
