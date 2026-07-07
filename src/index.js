@@ -14,7 +14,6 @@ import toasted from 'toasted-notifier';
 import prompt from 'electron-plugin-prompts';
 import Log from './classes/Log.js';
 import Storage from './classes/Storage.js';
-import Utils from './classes/Utils.js';
 import { fileURLToPath } from 'url';
 import { newMenuMain, newMenuContext, setMenuDeps } from './classes/Menu.js';
 
@@ -662,14 +661,20 @@ async function GetMessages( )
     }
 
     /**
-        will be thrown if the instance url does not return valid json (ntfy server possibly down?)
+        GetMessageData() returns an array of per-message json strings (or null on
+        failure, which is handled above). an empty array simply means this poll
+        returned no new messages, so there is nothing to process.
+
+        note: this previously called Utils.isJsonString( json ) on the array, which
+        coerced it to a comma-joined string. that only parsed as valid json when the
+        array held exactly one entry, so any poll containing two or more messages was
+        silently dropped. each entry is now validated individually in the loop below.
     */
 
-    if ( Utils.isJsonString( json ) === false )
+    if ( !Array.isArray( json ) || json.length === 0 )
     {
-        Log.error( `core`, chalk.redBright( `[messages]` ), chalk.white( `:  ` ),
-            chalk.redBright( `<msg>` ), chalk.gray( `Polling for new messages returned invalid json; skipping fetch. Change your instance URL to a valid ntfy instance.` ),
-            chalk.redBright( `<func>` ), chalk.gray( `GetMessages()` ) );
+        Log.debug( `core`, chalk.yellow( `[messages]` ), chalk.white( `:  ` ),
+            chalk.blueBright( `<msg>` ), chalk.gray( `No new messages returned by poll` ) );
 
         return;
     }
@@ -696,7 +701,21 @@ async function GetMessages( )
 
     for ( let i = 0; i < json.length; i++ )
     {
-        const object = JSON.parse( json[ i ] );
+        let object;
+        try
+        {
+            object = JSON.parse( json[ i ] );
+        }
+        catch ( err )
+        {
+            Log.warn( `core`, chalk.yellow( `[messages]` ), chalk.white( `:  ` ),
+                chalk.yellowBright( `<msg>` ), chalk.gray( `Skipping malformed message entry` ),
+                chalk.yellowBright( `<error>` ), chalk.gray( `${ err.message }` ),
+                chalk.yellowBright( `<entry>` ), chalk.gray( `${ json[ i ] }` ) );
+
+            continue;
+        }
+
         const id = object.id;
         const type = object.event;
         const time = object.time;
