@@ -836,5 +836,178 @@ if ( typeof window !== 'undefined' )
     }
 }
 
+/**
+    Notification bridge
+
+    the ntfy web app receives messages for every topic it is subscribed to and calls
+    the Web Notification API to alert the user. inside electron those web notifications
+    do not reliably reach the desktop notification server, so the popup is missed even
+    though the web app plays its sound.
+
+    here we intercept the web app's own notifications (in the page's main world) and
+    forward them to the main process, which displays them through the native notifier
+    (toasted-notifier / notify-send). because this piggybacks on the web app's live
+    subscriptions, it covers every topic — including ones added in the future — with no
+    poll-topic list to maintain.
+
+    we also mirror the real window visibility (pushed from main; hidden while the app
+    sits in the tray) into document.hidden / visibilityState, so the web app actually
+    emits a notification instead of silently updating a "focused" UI.
+*/
+
+( function setupNotificationBridge()
+{
+    if ( typeof window === 'undefined' || window.__ntfyNotificationBridge )
+        return;
+
+    window.__ntfyNotificationBridge = true;
+
+    /*
+        track the real app window visibility. default to hidden because the app is
+        started in the tray; main pushes accurate updates on show/hide and after load.
+    */
+
+    let appHidden = true;
+
+    try
+    {
+        if ( typeof window.electron !== 'undefined' && window.electron.receiveFromMain )
+        {
+            window.electron.receiveFromMain( 'fromMain', ( msg ) =>
+            {
+                if ( msg && typeof msg === 'object' && msg.type === 'window-visibility' )
+                    appHidden = !!msg.hidden;
+            });
+        }
+    }
+    catch ( e ) {}
+
+    try
+    {
+        Object.defineProperty( document, 'hidden',
+        {
+            configurable: true,
+            get: () => appHidden
+        });
+
+        Object.defineProperty( document, 'visibilityState',
+        {
+            configurable: true,
+            get: () => ( appHidden ? 'hidden' : 'visible' )
+        });
+    }
+    catch ( e ) {}
+
+    /*
+        forward a notification's text to the main process, which shows it through the
+        native notifier (toasted-notifier / notify-send).
+    */
+
+    function forwardToNative( title, body )
+    {
+        try
+        {
+            if ( typeof window.electron !== 'undefined' && window.electron.sendToMain )
+            {
+                window.electron.sendToMain( 'web-notification',
+                {
+                    title: String( title ?? '' ),
+                    body: String( body ?? '' )
+                });
+            }
+        }
+        catch ( e ) {}
+    }
+
+    /*
+        primary path: the ntfy web app displays notifications through the service worker
+        registration (registration.showNotification), not the Notification constructor.
+        patch the prototype method — this catches every registration instance, including
+        ones obtained before this script ran — forward the text to the native notifier and
+        suppress the original call (which does not surface in electron) to avoid duplicates.
+    */
+
+    try
+    {
+        const swProto = ( typeof window.ServiceWorkerRegistration !== 'undefined' )
+            ? window.ServiceWorkerRegistration.prototype
+            : null;
+
+        if ( swProto && typeof swProto.showNotification === 'function' && !swProto.__ntfyPatched )
+        {
+            swProto.__ntfyPatched = true;
+
+            swProto.showNotification = function ( title, options )
+            {
+                options = options || {};
+                forwardToNative( title, options.body );
+
+                return Promise.resolve();
+            };
+        }
+    }
+    catch ( e ) {}
+
+    /*
+        secondary path: also replace window.Notification with a bridge in case any code
+        uses the constructor directly. constructing forwards to native and returns a
+        minimal Notification-compatible stub, so exactly one popup is shown (the native one).
+    */
+
+    const NativeNotification = window.Notification;
+
+    function NotificationBridge( title, options )
+    {
+        options = options || {};
+        forwardToNative( title, options.body );
+
+        this.title = title;
+        this.body = options.body;
+        this.onclick = null;
+        this.onclose = null;
+        this.onerror = null;
+        this.onshow = null;
+    }
+
+    NotificationBridge.prototype.close = function () {};
+    NotificationBridge.prototype.addEventListener = function () {};
+    NotificationBridge.prototype.removeEventListener = function () {};
+    NotificationBridge.prototype.dispatchEvent = function () { return false; };
+
+    NotificationBridge.requestPermission = function ( cb )
+    {
+        if ( typeof cb === 'function' )
+            cb( 'granted' );
+
+        return Promise.resolve( 'granted' );
+    };
+
+    Object.defineProperty( NotificationBridge, 'permission',
+    {
+        configurable: true,
+        get: () => 'granted'
+    });
+
+    NotificationBridge.maxActions = ( NativeNotification && NativeNotification.maxActions ) || 2;
+
+    try
+    {
+        Object.defineProperty( window, 'Notification',
+        {
+            configurable: true,
+            writable: true,
+            value: NotificationBridge
+        });
+    }
+    catch ( e )
+    {
+        try
+        {
+            window.Notification = NotificationBridge;
+        }
+        catch ( e2 ) {}
+    }
+})();
+
 // Explicitly return undefined to prevent cloning issues
 undefined;
