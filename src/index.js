@@ -806,6 +806,7 @@ async function GetMessages( )
                 title: `${ topic } - ${ dateHuman }`,
                 subtitle: `${ dateHuman }`,
                 message: `${ message }`,
+                'app-name': `${ topic }`,
                 sound: 'Pop',
                 open: cfgInstanceURL,
                 persistent: cfgPersistent,
@@ -1631,6 +1632,22 @@ ipcMain.on( 'web-notification', ( event, data ) =>
 {
     const title = ( data && data.title ) ? String( data.title ) : appTitle;
     const message = ( data && data.body ) ? String( data.body ) : '';
+    /*
+        the forwarded topic may arrive as a full subscription url
+        (e.g. https://ntfy.example.com/tugtainer); reduce it to just the
+        topic name (the last path segment) for a clean notification label.
+    */
+
+    const topicRaw = ( data && data.topic ) ? String( data.topic ) : '';
+    const topicName = topicRaw.replace( /\/+$/, '' ).split( '/' ).pop() || topicRaw;
+
+    /*
+        label the notification with the user-assigned per-topic display name when
+        present; otherwise fall back to the plain topic name.
+    */
+
+    const displayName = ( data && data.displayName ) ? String( data.displayName ) : '';
+    const notificationTitle = displayName || topicName;
 
     /*
         ignore empty notifications
@@ -1644,6 +1661,7 @@ ipcMain.on( 'web-notification', ( event, data ) =>
     toasted.notify({
         title,
         message,
+        'app-name': notificationTitle,
         sound: 'Pop',
         open: store.get( 'instanceURL' ),
         persistent: cfgPersistent,
@@ -1654,7 +1672,9 @@ ipcMain.on( 'web-notification', ( event, data ) =>
 
     Log.debug( `ipc`, chalk.yellow( `[web-notification]` ), chalk.white( `:  ` ),
         chalk.blueBright( `<msg>` ), chalk.gray( `Forwarded web app notification to native notifier` ),
-        chalk.blueBright( `<title>` ), chalk.gray( `${ title }` ) );
+        chalk.blueBright( `<title>` ), chalk.gray( `${ title }` ),
+        chalk.blueBright( `<notificationTitle>` ), chalk.gray( `${ notificationTitle }` ),
+        chalk.blueBright( `<displayName>` ), chalk.gray( `${ displayName || '(none)' }` ) );
 });
 
 /**

@@ -903,18 +903,169 @@ if ( typeof window !== 'undefined' )
         native notifier (toasted-notifier / notify-send).
     */
 
-    function forwardToNative( title, body )
+    /*
+        the ntfy web app only puts the topic in the notification title when a message
+        has no title of its own; otherwise the title holds the message title. the topic
+        is always carried on the notification's data payload, so dig it out from the
+        likely shapes so main can label the popup with the topic regardless.
+    */
+
+    function extractTopic( options )
     {
         try
         {
-            if ( typeof window.electron !== 'undefined' && window.electron.sendToMain )
+            const data = ( options && options.data ) ? options.data : {};
+
+            return ( data.message && data.message.topic )
+                || data.topic
+                || ( data.notification && data.notification.topic )
+                || ( data.subscription && data.subscription.topic )
+                || data.subscriptionId
+                || '';
+        }
+        catch ( e )
+        {
+            return '';
+        }
+    }
+
+    /*
+        the ntfy web app lets the user assign a per-topic "display name". it is not
+        included in the notification payload — the web app keeps it in its own IndexedDB
+        ("ntfy" database, "subscriptions" store, keyed by the subscription id, which is
+        the topic url carried on the notification as data.subscriptionId). look it up
+        there so the native popup can be labelled with the display name when one is set.
+    */
+
+    function ntfyDatabaseNames()
+    {
+        return new Promise( ( resolve ) =>
+        {
+            try
             {
-                window.electron.sendToMain( 'web-notification',
+                if ( typeof indexedDB.databases === 'function' )
                 {
-                    title: String( title ?? '' ),
-                    body: String( body ?? '' )
-                });
+                    indexedDB.databases()
+                        .then( ( dbs ) => resolve( ( dbs || [] )
+                            .map( ( d ) => d && d.name )
+                            .filter( ( n ) => n === 'ntfy' || ( typeof n === 'string' && n.indexOf( 'ntfy' ) === 0 ) ) ) )
+                        .catch( () => resolve( [ 'ntfy' ] ) );
+                }
+                else
+                {
+                    resolve( [ 'ntfy' ] );
+                }
             }
+            catch ( e )
+            {
+                resolve( [ 'ntfy' ] );
+            }
+        });
+    }
+
+    function displayNameFromDb( dbName, subscriptionId )
+    {
+        return new Promise( ( resolve ) =>
+        {
+            try
+            {
+                const req = indexedDB.open( dbName );
+
+                req.onerror = () => resolve( '' );
+
+                req.onsuccess = () =>
+                {
+                    const dbc = req.result;
+
+                    try
+                    {
+                        if ( !dbc.objectStoreNames.contains( 'subscriptions' ) )
+                        {
+                            resolve( '' );
+                            dbc.close();
+                            return;
+                        }
+
+                        const store = dbc.transaction( 'subscriptions', 'readonly' ).objectStore( 'subscriptions' );
+                        const getReq = store.get( subscriptionId );
+
+                        getReq.onsuccess = () =>
+                        {
+                            const rec = getReq.result;
+                            resolve( ( rec && rec.displayName ) ? String( rec.displayName ) : '' );
+                            dbc.close();
+                        };
+
+                        getReq.onerror = () =>
+                        {
+                            resolve( '' );
+                            dbc.close();
+                        };
+                    }
+                    catch ( e )
+                    {
+                        resolve( '' );
+
+                        try
+                        {
+                            dbc.close();
+                        }
+                        catch ( e2 ) {}
+                    }
+                };
+            }
+            catch ( e )
+            {
+                resolve( '' );
+            }
+        });
+    }
+
+    async function lookupDisplayName( subscriptionId )
+    {
+        if ( !subscriptionId || typeof indexedDB === 'undefined' )
+            return '';
+
+        const names = await ntfyDatabaseNames();
+
+        for ( const name of names )
+        {
+            const displayName = await displayNameFromDb( name, subscriptionId );
+            if ( displayName )
+                return displayName;
+        }
+
+        return '';
+    }
+
+    function forwardToNative( title, options )
+    {
+        options = options || {};
+
+        try
+        {
+            if ( typeof window.electron === 'undefined' || !window.electron.sendToMain )
+                return;
+
+            const data = ( options && options.data ) ? options.data : {};
+            const subscriptionId = data.subscriptionId || '';
+
+            const send = ( displayName ) =>
+            {
+                try
+                {
+                    window.electron.sendToMain( 'web-notification',
+                    {
+                        title: String( title ?? '' ),
+                        body: String( options.body ?? '' ),
+                        topic: String( extractTopic( options ) ?? '' ),
+                        displayName: String( displayName ?? '' )
+                    });
+                }
+                catch ( e ) {}
+            };
+
+            lookupDisplayName( subscriptionId ).then( send ).catch( () => send( '' ) );
         }
         catch ( e ) {}
     }
@@ -940,7 +1091,7 @@ if ( typeof window !== 'undefined' )
             swProto.showNotification = function ( title, options )
             {
                 options = options || {};
-                forwardToNative( title, options.body );
+                forwardToNative( title, options );
 
                 return Promise.resolve();
             };
@@ -959,7 +1110,7 @@ if ( typeof window !== 'undefined' )
     function NotificationBridge( title, options )
     {
         options = options || {};
-        forwardToNative( title, options.body );
+        forwardToNative( title, options );
 
         this.title = title;
         this.body = options.body;
