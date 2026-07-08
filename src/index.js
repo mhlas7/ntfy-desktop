@@ -6,6 +6,8 @@
 
 import { app, BrowserWindow, dialog, ipcMain, Tray, shell, Menu, MenuItem, nativeImage } from 'electron';
 import path from 'path';
+import os from 'os';
+import crypto from 'crypto';
 import moment from 'moment';
 import chalk from 'chalk';
 import fs from 'fs';
@@ -802,10 +804,17 @@ async function GetMessages( )
 
         if ( !msgHistory.includes( id ) )
         {
+            /*
+                use the message icon when the publisher set one; otherwise the bundled default
+            */
+
+            const icon = await resolveNotificationIcon( object.icon ? String( object.icon ) : '' );
+
             toasted.notify({
                 title: `${ topic } - ${ dateHuman }`,
                 subtitle: `${ dateHuman }`,
                 message: `${ message }`,
+                icon,
                 'app-name': `${ topic }`,
                 sound: 'Pop',
                 open: cfgInstanceURL,
@@ -1628,7 +1637,84 @@ ipcMain.on( 'button-clicked', ( event, data ) =>
     later — without maintaining a separate poll-topics list.
 */
 
-ipcMain.on( 'web-notification', ( event, data ) =>
+/**
+    resolve a notification icon to a local file path
+
+    native notifiers (notify-send on linux, SnoreToast on windows) cannot load remote
+    http(s) urls — they require a local file path. so download a remote icon url once,
+    cache it in the temp dir (keyed by a hash of the url) and reuse it on subsequent
+    notifications. anything that isn't an http(s) url, plus any failure/timeout, falls
+    back to the bundled ntfy icon so a notification is never blocked by icon resolution.
+*/
+
+async function resolveNotificationIcon( iconUrl )
+{
+    if ( !iconUrl || !/^https?:\/\//i.test( iconUrl ) )
+        return appIcon;
+
+    try
+    {
+        const cacheDir = path.join( os.tmpdir(), 'ntfy-desktop-icons' );
+        if ( !fs.existsSync( cacheDir ) )
+            fs.mkdirSync( cacheDir, { recursive: true });
+
+        const hash = crypto.createHash( 'sha1' ).update( iconUrl ).digest( 'hex' );
+        const extMatch = iconUrl.match( /\.(png|jpe?g|gif|webp|svg|ico)(?:[?#]|$)/i );
+        const ext = extMatch ? extMatch[ 1 ] : 'png';
+        const filePath = path.join( cacheDir, `${ hash }.${ ext }` );
+
+        /*
+            cache hit — reuse the previously downloaded icon
+        */
+
+        if ( fs.existsSync( filePath ) )
+            return filePath;
+
+        /*
+            download with a short timeout so a slow host never hangs the popup
+        */
+
+        const controller = new AbortController();
+        const timer = setTimeout( () => controller.abort(), 3000 );
+
+        let res;
+        try
+        {
+            res = await fetch( iconUrl, { signal: controller.signal });
+        }
+        finally
+        {
+            clearTimeout( timer );
+        }
+
+        if ( !res.ok )
+            return appIcon;
+
+        const buf = Buffer.from( await res.arrayBuffer() );
+
+        /*
+            sanity size guard (5 MB)
+        */
+
+        if ( buf.length > 5 * 1024 * 1024 )
+            return appIcon;
+
+        fs.writeFileSync( filePath, buf );
+
+        return filePath;
+    }
+    catch ( e )
+    {
+        Log.debug( `ipc`, chalk.yellow( `[web-notification]` ), chalk.white( `:  ` ),
+            chalk.blueBright( `<msg>` ), chalk.gray( `Icon download failed; using default icon` ),
+            chalk.blueBright( `<url>` ), chalk.gray( `${ iconUrl }` ),
+            chalk.blueBright( `<error>` ), chalk.red( `${ e.message }` ) );
+
+        return appIcon;
+    }
+}
+
+ipcMain.on( 'web-notification', async( event, data ) =>
 {
     const title = ( data && data.title ) ? String( data.title ) : appTitle;
     const message = ( data && data.body ) ? String( data.body ) : '';
@@ -1658,9 +1744,17 @@ ipcMain.on( 'web-notification', ( event, data ) =>
 
     const cfgPersistent = store.getInt( 'bPersistentNoti' ) !== 0;
 
+    /*
+        use the message icon when the publisher set one; otherwise the bundled default
+    */
+
+    const iconUrl = ( data && data.icon ) ? String( data.icon ) : '';
+    const icon = await resolveNotificationIcon( iconUrl );
+
     toasted.notify({
         title,
         message,
+        icon,
         'app-name': notificationTitle,
         sound: 'Pop',
         open: store.get( 'instanceURL' ),
@@ -1674,7 +1768,8 @@ ipcMain.on( 'web-notification', ( event, data ) =>
         chalk.blueBright( `<msg>` ), chalk.gray( `Forwarded web app notification to native notifier` ),
         chalk.blueBright( `<title>` ), chalk.gray( `${ title }` ),
         chalk.blueBright( `<notificationTitle>` ), chalk.gray( `${ notificationTitle }` ),
-        chalk.blueBright( `<displayName>` ), chalk.gray( `${ displayName || '(none)' }` ) );
+        chalk.blueBright( `<displayName>` ), chalk.gray( `${ displayName || '(none)' }` ),
+        chalk.blueBright( `<icon>` ), chalk.gray( `${ icon }` ) );
 });
 
 /**
