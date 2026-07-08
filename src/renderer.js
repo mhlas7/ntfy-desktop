@@ -1059,7 +1059,8 @@ if ( typeof window !== 'undefined' )
                         title: String( title ?? '' ),
                         body: String( options.body ?? '' ),
                         topic: String( extractTopic( options ) ?? '' ),
-                        displayName: String( displayName ?? '' )
+                        displayName: String( displayName ?? '' ),
+                        icon: String( ( data.message && data.message.icon ) || options.icon || '' )
                     });
                 }
                 catch ( e ) {}
