@@ -37,7 +37,7 @@ dir_src="src"
 # #
 
 bDeleteBuild="false"
-Copyright="Copyright (c) 2025"
+Copyright="Copyright (c) 2026"
 FileDescription="Ntfy.sh desktop client for Windows, Linux, and MacOS with push notifications. Supports official ntfy.sh website and self-hosted instances."
 ProductName="Ntfy Desktop"
 OriginalFilename="ntfy-desktop.exe"

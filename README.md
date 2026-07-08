@@ -115,6 +115,9 @@ To install Ntfy on your system, visit the following links:
 - Shortcut key-binds
   - Can disable the keyboard shortcuts
 - Receive push notifications from ntfy server to desktop
+  - Native desktop notifications for **every** subscribed topic, bridged from the ntfy web app's own notifications — automatically covers topics added later, with no poll-topic list to maintain
+  - Notification title uses the topic's assigned **display name**, falling back to the topic name
+  - Notification shows the message **icon** (from the publisher's `Icon:` header), falling back to the bundled ntfy icon
   - Ability to adjust polling rate
   - Modify `datetime` format
   - Notifications (two options):
@@ -122,6 +125,7 @@ To install Ntfy on your system, visit the following links:
     2. Timed notifications which disappear after X seconds
   - Topic filtering & support
     - Defaults: `news, announcements`
+- Preserves your custom self-hosted instance when the network drops, and auto-reconnects once it is back online
 - Supports Ntfy API token
 - Taskbar unread message count / count
 - Includes [command-line arguments](#cli-arguments)

@@ -57,7 +57,7 @@ set dir_src=src
 :: #
 
 set "bDeleteBuild=false"
-set "Copyright=Copyright (c) 2025"
+set "Copyright=Copyright (c) 2026"
 set "FileDescription=Ntfy.sh desktop client for Windows, Linux, and MacOS with push notifications. Supports official ntfy.sh website and self-hosted instances."
 set "ProductName=Ntfy Desktop"
 set "OriginalFilename=ntfy-desktop.exe"
