@@ -182,8 +182,10 @@ if command -v makepkg >/dev/null 2>&1; then
 
         pkgfile=$(ls -t "${script_dir}/packaging/arch/"*.pkg.tar.zst 2>/dev/null | head -n1)
         if [ -n "${pkgfile}" ]; then
-            cp "${pkgfile}" "${script_dir}/${dir_dist}/"
-            echo "[OK] Arch package: $(basename "${pkgfile}")"
+            # rename to match the ntfy-desktop-<os>-<arch> convention used for other artifacts
+            arch_out="ntfy-desktop-linux-x64-arch.pkg.tar.zst"
+            cp "${pkgfile}" "${script_dir}/${dir_dist}/${arch_out}"
+            echo "[OK] Arch package: ${arch_out}"
         else
             echo "[WARN] Arch package build produced no output"
         fi
@@ -249,7 +251,7 @@ echo "Build summary:"
 echo "  - Windows packages: ntfy-desktop-windows-*.zip"
 echo "  - Linux packages:   ntfy-desktop-linux-*.zip"
 echo "  - macOS packages:   ntfy-desktop-mac-*.tar.gz"
-echo "  - Arch package:     ntfy-desktop-*-x86_64.pkg.tar.zst (Arch hosts only)"
+echo "  - Arch package:     ntfy-desktop-linux-x64-arch.pkg.tar.zst (Arch hosts only)"
 echo
 echo "============================================================================="
 echo
