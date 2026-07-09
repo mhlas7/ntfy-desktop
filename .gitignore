@@ -139,6 +139,15 @@
 !/electron
 
 # #
+#   [WL]: Packaging (Arch PKGBUILD; build artifacts stay ignored)
+# #
+
+!/packaging
+!/packaging/arch
+!/packaging/arch/PKGBUILD
+!/packaging/arch/*.desktop
+
+# #
 #   [WL]: Tests
 # #
 

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Ntfy Desktop
+GenericName=Notification Client
+Comment=Ntfy.sh desktop client with push notifications
+Exec=/opt/ntfy-desktop/ntfy-desktop %U
+Icon=ntfy-desktop
+Terminal=false
+Categories=Network;Utility;
+StartupWMClass=ntfy-desktop
+Keywords=ntfy;notifications;push;

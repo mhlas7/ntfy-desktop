@@ -155,6 +155,47 @@ for arch in "${platformLinux[@]}"; do
 done
 
 # #
+#   Build Arch Linux package (pacman)
+#
+#   packages the linux x64 electron build into a .pkg.tar.zst via the PKGBUILD in
+#   packaging/arch, then drops it into dist/. skipped automatically on hosts without
+#   makepkg (i.e. non-Arch build machines).
+# #
+
+echo "[BUILD] Building Arch Linux package..."
+echo
+
+if command -v makepkg >/dev/null 2>&1; then
+    if [ -x "${script_dir}/${dir_build}/ntfy-desktop-linux-x64/ntfy-desktop" ]; then
+
+        # keep the PKGBUILD version in sync with src/package.json (single source of truth)
+        app_ver=$(sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "${script_dir}/${dir_src}/package.json" | head -n1)
+        if [ -n "${app_ver}" ]; then
+            sed -i -E "s/^pkgver=.*/pkgver=${app_ver}/" "${script_dir}/packaging/arch/PKGBUILD"
+        fi
+
+        (
+            cd "${script_dir}/packaging/arch"
+            rm -f ./*.pkg.tar.zst
+            makepkg -f --nodeps
+        )
+
+        pkgfile=$(ls -t "${script_dir}/packaging/arch/"*.pkg.tar.zst 2>/dev/null | head -n1)
+        if [ -n "${pkgfile}" ]; then
+            cp "${pkgfile}" "${script_dir}/${dir_dist}/"
+            echo "[OK] Arch package: $(basename "${pkgfile}")"
+        else
+            echo "[WARN] Arch package build produced no output"
+        fi
+    else
+        echo "[WARN] linux x64 build not found; skipping Arch package"
+    fi
+else
+    echo "[SKIP] makepkg not found (non-Arch host); skipping Arch package"
+fi
+echo
+
+# #
 #   Build macOS
 # #
 
@@ -208,6 +249,7 @@ echo "Build summary:"
 echo "  - Windows packages: ntfy-desktop-windows-*.zip"
 echo "  - Linux packages:   ntfy-desktop-linux-*.zip"
 echo "  - macOS packages:   ntfy-desktop-mac-*.tar.gz"
+echo "  - Arch package:     ntfy-desktop-*-x86_64.pkg.tar.zst (Arch hosts only)"
 echo
 echo "============================================================================="
 echo

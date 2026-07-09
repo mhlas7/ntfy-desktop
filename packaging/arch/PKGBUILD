@@ -1,0 +1,59 @@
+# Maintainer: mhlas7
+#
+# Packages the locally-built Electron app (produced by ../../build.sh or
+# `npm run build:lin:linux`, output at ../../build/ntfy-desktop-linux-x64)
+# into a pacman-managed package.
+#
+# Build & install:   makepkg -si
+# Build only:        makepkg -f      then   sudo pacman -U ntfy-desktop-*.pkg.tar.zst
+
+pkgname=ntfy-desktop
+pkgver=2.3.0
+pkgrel=1
+pkgdesc="Ntfy.sh desktop client with push notifications (self-hosted or ntfy.sh)"
+arch=('x86_64')
+url="https://github.com/aetherinox/ntfy-desktop"
+license=('MIT')
+depends=('gtk3' 'nss' 'alsa-lib' 'libnotify')
+options=('!strip' '!debug')
+source=('ntfy-desktop.desktop')
+sha256sums=('SKIP')
+
+# locally-built electron package + launcher icon (relative to this PKGBUILD)
+_appsrc="${startdir}/../../build/ntfy-desktop-linux-x64"
+_iconsrc="${startdir}/../../src/assets/icons/ntfy.png"
+
+prepare() {
+    if [[ ! -x "${_appsrc}/ntfy-desktop" ]]; then
+        echo "error: prebuilt app not found at ${_appsrc}" >&2
+        echo "       run ../../build.sh (or npm run build:lin:linux) first." >&2
+        return 1
+    fi
+}
+
+package() {
+    # application files -> /opt
+    install -dm755 "${pkgdir}/opt/ntfy-desktop"
+    cp -a "${_appsrc}/." "${pkgdir}/opt/ntfy-desktop/"
+
+    # electron's sandbox helper must be setuid root, otherwise the app refuses
+    # to start sandboxed on a system-installed (root-owned) path
+    chmod 4755 "${pkgdir}/opt/ntfy-desktop/chrome-sandbox"
+
+    # launcher on PATH
+    install -dm755 "${pkgdir}/usr/bin"
+    ln -s /opt/ntfy-desktop/ntfy-desktop "${pkgdir}/usr/bin/ntfy-desktop"
+
+    # icon (resolved by name "ntfy-desktop" from the .desktop entry)
+    install -Dm644 "${_iconsrc}" "${pkgdir}/usr/share/pixmaps/ntfy-desktop.png"
+
+    # desktop entry
+    install -Dm644 "${srcdir}/ntfy-desktop.desktop" \
+        "${pkgdir}/usr/share/applications/ntfy-desktop.desktop"
+
+    # license (shipped inside the electron bundle)
+    if [[ -f "${_appsrc}/LICENSE" ]]; then
+        install -Dm644 "${_appsrc}/LICENSE" \
+            "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    fi
+}
